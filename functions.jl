@@ -6,6 +6,7 @@ function sample_trajectory(x, T, β, Q, μ, Σ, F, H)
         push!(s0, x)
     end
     s = [copy(m) for m in s0]
+    #s[1] = [5.0, 5.0]
     for t in 2:T
         s[t] = H * s[t] + rand(MultivariateNormal(μ, Σ))
     end
@@ -13,11 +14,11 @@ function sample_trajectory(x, T, β, Q, μ, Σ, F, H)
 end
 
 # tracking function
-function tracking(obs, img, h)
+function tracking(obs, img, h) 
     i, j = round.(Int, obs)
-    c = CartesianIndices((i-h:i+h, j-h:j+h))
-    x_est = sum((img[k]*k[1]) for k in c)/sum(img[c])
-    y_est = sum((img[k]*k[2]) for k in c)/sum(img[c])
+    c = CartesianIndices((i-h:i+h, j-h:j+h)) #create a square of size 2h*2h, center at (i, j)
+    x_est = sum((img[k]*k[1]) for k in c)/sum(img[c]) #estimation of x-coordinate
+    y_est = sum((img[k]*k[2]) for k in c)/sum(img[c]) #estimation of y-coordinate
     box = collect(Iterators.product([i-h,i+h], [j-h,j+h]))
     return (x_est, y_est), box
 end
@@ -61,20 +62,20 @@ end
 
 # kalman filter #
 function predict(x, F, P, Q)
-    x = F*x
-    P = F*P*F' + Q
-    x, P
+    x = F*x  #predicted x 
+    P = F*P*F' + Q  #predicted error covariance (describes the squared uncertainty of predicted x)
+    x, P  
 end
 
-function correct(x, y, Ppred, R, H)
-    yres = y - H*x # innovation residual
+function correct(x, y, Ppred, R, H)  # y is the new observation input
+    yres = y - H*x # innovation residual     //H*x as prediction of y
 
-    S = (H*Ppred*H' + R) # innovation covariance
+    S = (H*Ppred*H' + R) # innovation covariance    //similar to P in predict step 
 
-    K = Ppred*H'/S # Kalman gain
+    K = Ppred*H'/S # Kalman gain    
     x = x + K*yres
     #P = (I - K*H)*Ppred*(I - K*H)' + K*R*K' #  Joseph form
-    P = (I - K*H)*Ppred
+    P = (I - K*H)*Ppred  #--> Ppred - K*H*Ppred   // corrected P, P converges to a fixed value
     x, P, yres, S
 end
 #use the analytical solution of kalman filter 
