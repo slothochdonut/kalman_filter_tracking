@@ -65,9 +65,9 @@ Random.seed!(123)
 x0 = [0.0, 0.0] #start point
 
 β = [0.0, 0.0]
-β = [1.0, 0.5]
-Q = [1.0 0
-    0 1.0]
+#β = [1.0, 0.5]
+Q = [1.0 0.0
+     0.0 1.0]
 
 #Q1 = [0.9 -0.1; 0.1 0.9]
 T = 100
@@ -103,12 +103,26 @@ save("figures/random_walk2.png", fig2)
 
 
 # a linear dynamic transition
-# parameters for example 3 
+# parameters for example 3  
+"""
+side project:
+1. if the F is different in simulation and filter, what happens to the result?
+2. if a control matrix B and vector u is added, what's the physics explanation?
+    so far B and u are zero.
+"""
+
 Random.seed!(123)
 F = [1.0 0.0 1.0 0.0
-     0.0 1.0 0.0 0.5
+     0.0 1.0 0.0 1.0
      0.0 0.0 1.0 0.0
      0.0 0.0 0.0 1.0]
+
+"""
+F1 = [1.0 0.0 0.0 0.0
+      0.0 1.0 0.0 0.0
+      0.0 0.0 1.0 0.0
+      0.0 0.0 0.0 1.0]
+"""
 
 H = [1.0 0.0 0.0 0.0
      0.0 1.0 0.0 0.0]
@@ -117,6 +131,10 @@ x0 = [0.0, 0.0, 0.0, 0.0]
 β = [0.0, 0.0, 0.0, 0.0]
 
 Q = Matrix{Float64}(I, 4, 4)
+
+#B = Matrix{Float64}(I, 4, 4)
+#u = [0.0, 0.0, 1.5, 1.5]
+#u = [0.0, 0.0, 0.0, 0.0]
 
 """
 Q1 = copy(Q)
@@ -130,8 +148,8 @@ end
 """
 
 μ = [0.0, 0.0]  
-R = [1.0 0.0
-     0.0 1.0]  #choose large variance for illustration
+R = [1.0  0.0
+     0.0  1.0]  #choose large variance for illustration
 P = I
 
 T = 100  #50, 20
@@ -141,7 +159,7 @@ s0_1, s_1 = sample_trajectory(x0, T, β, Q, μ, R, F, H)
 x = x0
 path_1 = [x]
 for i = 2:T
-    x, P = predict(x, F, P, Q)
+    x, P = predict(x, F, P, Q, B, u)
     obs = s_1[i]
     x, P, yres = correct(x, obs, P, R, H)
     push!(path_1, x)
@@ -155,10 +173,22 @@ ax3.xlabel = "x1"; ax3.ylabel = "x2"
 axislegend(ax3)
 fig3
 
+fig4 = Figure(resolution = (1500, 750))
+ax1 = fig4[1, 1] = Axis(fig4, title = "when control vector not zero, estimate residual of x1, x2 \n calculated by first.(path - s0), last.(path - s0)")
+scatter!(ax1, 1:T, first.(path_1 - s0_1), color = :red, label="residual of x1")
+scatter!(ax1, 1:T, getindex.(path_1 - s0_1, 2), color = :blue, label="residual of x2")
+hlines!(ax1, mean(first.(path_1 - s0_1)), color = :red)
+hlines!(ax1, mean(getindex.(path_1 - s0_1, 2)), color = :blue)
+axislegend(ax1)
+fig4
+
 save("figures/linear_system$T.png", fig3)
 
+
 rmse_filter = sqrt(norm([first.(path_1-s0_1), getindex(path_1-s0_1, 2)]))
-rmse_measure= sqrt(norm([first.(s_1)-first.(s0_1), getindex.(s_1, 2)-getindex.(s0_1, 2)]))
+rmse_measure= sqrt(norm([first.(s_1)-first.(s0_1), getindex.(s_1, 2)-getindex.(s0_1, 2)])) 
+#note that s0_1 is 4 dims, s_1 is 2 dims
+print(rmse_filter ,"\n", rmse_measure)
 
 
 ###detecting and tracking object
@@ -170,9 +200,9 @@ j0 = 50
 d((i, j), (i0, j0)) = sqrt((i - i0)^2 + (j - j0)^2)
 a = 10^2             # size of the "blob"
 
-# make a picture (matrix) with a blob
+# make a picture (matrix) with a blob at (i0, j0), radius a.
 beetleimg(i0, j0, a) = [exp(-d((i, j), (i0, j0))^2/(2*a)) for i = 1:n, j = 1:m]
-#image(beetleimg(100, 100, a))  #a blob at (100, 100)
+image(beetleimg(100, 100, a))  #a blob at (100, 100)
 
 # Normalize a picture to [0, 1]
 nlz(img) = (img .- minimum(img)) / (maximum(img) - minimum(img))
@@ -196,23 +226,25 @@ positions = positions .- findmin(positions)[1]
 
 m = n = 200
 a = 5^2
-imgs = [nlz(σ*randn(m, n) + beetleimg((pos[1].+50)*1.3, (pos[2].+50)*1.3, a)) for pos in s0]
+imgs = [nlz(σ*randn(m, n) + beetleimg((pos[1].+50), (pos[2].+50), a)) for pos in s0]
 
 using ImageFiltering
 imgs_flt = [imfilter(img, ImageFiltering.Kernel.gaussian(5)) for img in imgs]
+image(imgs[1])
+image(imgs_flt[1])
 
-# find the coordinates of the maximum pixel
+# function of find the coordinates of the maximum pixel
 myfindmax(img) = convert(Tuple, findmax(img)[2]) #return the index
 ys = myfindmax(imgs_flt[1])  #only use the first observation
 #ys = [myfindmax(img) for img in imgs]
 
 
-# tracking the location
+# tracking the location ：not using kalman filter here, yet =-=
 est_loc = []
 obs = ys
 rec = []
 for i in 2:T
-    est_i, box_i= tracking(obs, imgs_flt[i], 30) #how to choose h? 
+    est_i, box_i= tracking(obs, imgs_flt[i], 25) #how to choose h? 
     obs = est_i
     push!(est_loc, est_i)
     push!(rec, box_i)
@@ -224,7 +256,7 @@ sl1 = fig4[2, 1] = Slider(fig4, range = eachindex(imgs), startvalue = 1)
 curimg = lift(i -> imgs_flt[i], sl1.value)
 image!(ax3, curimg)
 
-line1 = lines!(ax3, (first.(s0).+50)*1.3, (last.(s0).+50)*1.3, color = :red, linewidth=3) #original track
+line1 = lines!(ax3, (first.(s0).+50), (last.(s0).+50), color = :red, linewidth=3) #original track
 line2 = lines!(ax3, first.(est_loc), last.(est_loc), color = :blue, linewidth=3) #observed track
 fig4
 

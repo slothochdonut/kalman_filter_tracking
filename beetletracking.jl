@@ -5,8 +5,8 @@ using FileIO
 using VideoIO
 using Colors
 using StaticArrays
-using GLMakie
-import GLMakie; gl = GLMakie
+using GLMakie 
+const GL=GLMakie
 using ImageFiltering
 using ColorSchemes
 
@@ -15,7 +15,7 @@ size_theme = Theme(fontsize = 30, titlesize = 10)
 set_theme!(size_theme)
 
 
-f = VideoIO.openvideo("beetle1.mp4")
+f = VideoIO.openvideo("data/beetle1.mp4")
 img = read(f)
 imgs = [rotr90(Matrix(Gray.(restrict(img))))]
 i = 1
@@ -25,21 +25,22 @@ while !eof(f) && i < 500
     push!(imgs, rotr90(Matrix(Gray.(restrict(img)))))
 end
 close(f)
-scenesize = (960, 560)
+scenesize = (960, 560) #(1920/2, 1080/2)
 n = length(imgs)
 #nlz(x, (a,b) = extrema(x)) = (x .- a)./(b-a)
 
 imgs1 = [imfilter(img, ImageFiltering.Kernel.gaussian(3)) for img in imgs]
+imgs1[1]
 
 I2 = @SMatrix[1.0  0.0
       0.0  1.0]
 I4 = SMatrix{4,4}(1.0I)
 I6 = SMatrix{6,6}(1.0I)
 
-#without velocity state
+#without velocity state; P0 can't be immutable matrix, be careful
 Set1 = Dict(:P0 => I2,:x0 => SVector(1536.0/2, 620.0/2), :Q0 => I2,:F => I2,:H => I2,:R => I2)
 #with velocity state
-Set2 = Dict(:P0 => I4,:x0 => SVector(1537.0/2, 620.0/2, 0.0, 0.0) ,:Q0 => I4,:F => @SMatrix[
+Set2 = Dict(:P0 => I4,:x0 => SVector(1536.0/2, 620.0/2, 0.0, 0.0) ,:Q0 => I4,:F => @SMatrix[
     1.0 0.0 1.0 0.0
     0.0 1.0 0.0 1.0
     0.0 0.0 1.0 0.0
@@ -48,33 +49,40 @@ Set2 = Dict(:P0 => I4,:x0 => SVector(1537.0/2, 620.0/2, 0.0, 0.0) ,:Q0 => I4,:F 
     1.0 0.0 0.0 0.0
     0.0 1.0 0.0 0.0],:R => I2)
 
-function trajectory(imgs, n;x0, P0, Q0, F, H, R)
+function trajectory(imgs, n; x0, P0, Q0, F, H, R)
     state = [x0]
+    Ps = [P0]
     y = SArray{Tuple{2}, Float64, 1, 2}[]
     #res = similar(latent, 0)
     let x = x0
         P = P0
         for i in 1:n
             x, P = predict(x, F, P, Q0)
-            xobs, err = track(-imgs[i], x, 5)
+            xobs, err = track(-imgs[i], x, 10)  #why is track in between? Because the obs need to be used in update step
             x, P, yres = correct(x, xobs, P, R, H)
             push!(state, x)
             push!(y, xobs)
+            push!(Ps, P)
             #push!(res, yres)
         end
     end
     return state, y
 end
 
-x1, y1 = trajectory(imgs1, n;Set1...)
+#here x is the estimate state(we don't know the real state), y is observation
+x1, y1 = trajectory(imgs, n; Set1...)
 x2, y2 = trajectory(imgs1, n;Set2...)
 
-fig5 = Figure()
-ax = fig5[1,1] =gl.Axis(fig5)
-lines!(ax, x1, linewidth=3, color=:red, label="without latent variable")
+fig5 = Figure(resolution=(1200,800))
+ax = fig5[1,1] = GL.Axis(fig5, title="Trajectory of first 10 seconds", xlabel="X-axis", ylabel="Y-axis")
+lines!(ax, x1, linewidth=3, color=:red, label="without velocity")
+#lines!(ax, y1, linewidth=3, color=:blue, label="without velocity")
 lines!(ax, getindex.(x2,1), getindex.(x2,2),linewidth=3, color=:green, label="with velocity")
+scatter!([1536.0/2], [620.0/2], marker=:star5, markersize=25, color = :red, label ="start point")
 axislegend(ax)
 fig5
+
+save("figures/first10seconds.png", fig5)
 
 """
 x0 = SVector(1536.0/2, 620.0/2)
@@ -86,28 +94,33 @@ let x = x0
     end
 end
 
-lines(path2, color=:green)
+f = Figure(resolution=(1200,800))
+ax = GL.Axis(f[1,1], title="only use tracking method")
+lines!(ax, path2, color=:red)
 """
 
 #illustrate the beetle moving track and direction with arrow
-arrows!(getindex.(latent, 1), getindex.(latent, 2), getindex.(latent, 3), getindex.(latent, 4))
-#lines(10vel .+ Ref(mean(path3)))
+#arrows!(getindex.(x2, 1), getindex.(x2, 2), getindex.(x2, 3), getindex.(x2, 4))
+#lines(10vel .+ Ref(mean(path2)))
 
-fig6 = Figure()
-ax1 = fig6[1, 1] = gl.Axis(fig6)
-sl1 = fig6[2, 1] = Slider(fig6, range = eachindex(imgs), startvalue = 3)
+fig6 = Figure(resolution=(1500, 1000))
+ax1 = fig6[1, 1] = GL.Axis(fig6)
+sl1 = fig6[2, 1] = Slider(fig6, range = eachindex(imgs), startvalue = 1)
 curimg = lift(i -> imgs[i], sl1.value)
 image!(ax1, curimg)
-lines!(ax1, path3)
+lines!(ax1, x1, linewidth=3)
+
+curpos = [lift(i -> [x2[i][k]], sl1.value) for k in 1:2]
+scatter!(ax1, curpos..., markersize=10, strokecolor=:red, strokewidth=2)
+
+curs = [lift(i -> [x2[i][k]], sl1.value) for k in 1:4]
+arrows!(ax1, curs..., arrowcolor=:red, linecolor=:red, arrowsize=3, linewidth=2, lengthscale=10)
 display(fig6)
 
-curpos = lift(i -> [path3[i]], sl1.value)
-scatter!(ax1, curpos, markersize=10, strokecolor=:red, strokewidth=2, color= RGBA(0.2, 1.0, 0.0, 0.0))
-
-curs = [lift(i -> [latent[i][k]], sl1.value) for k in 1:4]
-arrows!(ax1, curs..., arrowcolor=:red, linecolor=:red, arrowsize=3, linewidth=2, lengthscale=10)
+save("figures/firstonimage.png", fig6)
 
 
+#experimenting!!! about noise 
 #try add more noise and see how it effect the trajectory
 a, b = size(imgs[1])
 result = SArray[]
@@ -124,8 +137,8 @@ for σ in 0.05:0.05:0.5 #noise level(standard deviation of gaussian)
     for k in 1:K
         rnd = rand(Normal(0.0, σ), (a, b))
         imgs_ = [rnd + imgs[i] for i= 1:100]
-        latent = trajectory(imgs_,100;Set2...)[1]
-        latent1 = trajectory(imgs_,100;Set_R...)[1]
+        latent = trajectory(imgs_,100; Set2...)[1]
+        latent1 = trajectory(imgs_,100; Set_R...)[1]
         end_point = last(latent)[1:2]
         end_point1 = last(latent1)[1:2]
         E = E + norm(xt-end_point)^2/K   #mean squared error of end point
@@ -182,8 +195,6 @@ axislegend(ax, position=:lt)
 fig7
 
 
-
-
 # plot the variation wrt. σ
 fig7 = Figure(backgroundcolor = RGBf0(0.90, 0.90, 0.90), fontsize=30, titlesize=10)
 ax1 = fig7[1, 1] = gl.Axis(fig7, title = "Percent \n with states of velocity")
@@ -221,7 +232,7 @@ display(fig7)
 =#
 
 
-#= analyse residuals
+#analyse residuals
 
 res_matrix = reshape(reinterpret(Float64, res), 2, :)
 fig7 = Figure()
@@ -236,4 +247,4 @@ heatmap(-5:0.1:5, -5:0.1:5, Z)
 
 scatter(res_matrix[1,:], res_matrix[2,:], color= :red)
 scatter!(first.(res), last.(res))
-=#
+
