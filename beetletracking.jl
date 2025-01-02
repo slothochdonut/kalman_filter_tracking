@@ -11,7 +11,12 @@ using ImageFiltering
 using ColorSchemes
 
 include("functions.jl")
-size_theme = Theme(fontsize = 30, titlesize = 10)
+#set plot theme
+size_theme = Theme(fontsize = 30, resolution = (1500, 800), Axis = (
+        backgroundcolor = :gray90,
+        xgridcolor = :white,
+        ygridcolor = :white,
+    ), figsizetitlesize = 10)
 set_theme!(size_theme)
 
 
@@ -58,7 +63,7 @@ function trajectory(imgs, n; x0, P0, Q0, F, H, R)
         P = P0
         for i in 1:n
             x, P = predict(x, F, P, Q0)
-            xobs, err = track(-imgs[i], x, 10)  #why is track in between? Because the obs need to be used in update step
+            xobs, err = track(-imgs[i], x[1:2], 10)  #why is track in between? Because the obs need to be used in update step
             x, P, yres = correct(x, xobs, P, R, H)
             push!(state, x)
             push!(y, xobs)
@@ -71,13 +76,13 @@ end
 
 #here x is the estimate state(we don't know the real state), y is observation
 x1, y1 = trajectory(imgs, n; Set1...)
-x2, y2 = trajectory(imgs1, n;Set2...)
+x2, y2 = trajectory(imgs1, n; Set2...)
 
 fig5 = Figure(resolution=(1200,800))
 ax = fig5[1,1] = GL.Axis(fig5, title="Trajectory of first 10 seconds", xlabel="X-axis", ylabel="Y-axis")
 lines!(ax, x1, linewidth=3, color=:red, label="without velocity")
 #lines!(ax, y1, linewidth=3, color=:blue, label="without velocity")
-lines!(ax, getindex.(x2,1), getindex.(x2,2),linewidth=3, color=:green, label="with velocity")
+lines!(ax, getindex.(x2,1), getindex.(x2,2), linewidth=3, color=:green, label="with velocity")
 scatter!([1536.0/2], [620.0/2], marker=:star5, markersize=25, color = :red, label ="start point")
 axislegend(ax)
 fig5
@@ -231,20 +236,4 @@ lines!(path3, color= :red)
 display(fig7)
 =#
 
-
-#analyse residuals
-
-res_matrix = reshape(reinterpret(Float64, res), 2, :)
-fig7 = Figure()
-ax1 = fig7[1,1] = gl.Axis(fig7)
-ax2 = fig7[2,1] = gl.Axis(fig7)
-scatter!(ax1, res_matrix[1,:])
-scatter!(ax2, res_matrix[2,:])
-mvnorm = fit(MvNormal, res_matrix)
-
-Z = [pdf(mvnorm,[i,j]) for i in -5:0.1:5, j in -5:0.1:5]
-heatmap(-5:0.1:5, -5:0.1:5, Z)
-
-scatter(res_matrix[1,:], res_matrix[2,:], color= :red)
-scatter!(first.(res), last.(res))
 

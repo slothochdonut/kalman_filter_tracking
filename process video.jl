@@ -26,9 +26,11 @@ scene, layout = layoutscene(resolution = (1400, 900))
 
 lscenes = layout[1:2, 1:3] = [LScene(scene, camera = cam3d!, raw = false) for _ in 1:6]
 
+"""
 [scatter!(lscenes[i], rand(100, 3), color = c)
     for (i, c) in enumerate([:red, :blue, :green, :orange, :black, :gray])]
 display(scene)
+"""
 
 nlz(x, (a,b) = extrema(x)) = (x .- a)./(b-a)
 
