@@ -18,15 +18,15 @@ file = "data/beetle1.mp4"
 #img = read(VideoIO.openvideo("data/beetle1.mp4"))
 #img_hsv = HSV.(img)
 
-img_sample = read_video((102, 103), file)[2]
+img_sample = read_video((0, 1), file)[2]
 imgs= [imfilter(img, ImageFiltering.Kernel.gaussian(3)) for img in img_sample]
 #=Image Credit:  C. Liu. Beyond Pixels: Exploring New Representations and
 #Applications for Motion Analysis. Doctoral Thesis. Massachusetts Institute of
 #Technology. May 2009. =#
 
-algorithm = Farneback(50, estimation_window = 5 ,
+algorithm = Farneback(10, estimation_window = 5,
                          σ_estimation_window = 1.0,
-                         expansion_window = 10,
+                         expansion_window = 5,
                          σ_expansion_window = 1.0)
 
 flow = optical_flow(Gray{Float32}.(imgs[1]), Gray{Float32}.(imgs[5]), algorithm)
@@ -52,7 +52,6 @@ black_image[orange_mask] .= RGB(1, 0, 0)
 black_image[orange_mask]
 black_image
 
-
 #supposed to be around (768, 310)
 #we can convolute the image with a sliding window, assign the mean intensity to each pixel, 
 a, b = size(black_image)
@@ -72,4 +71,6 @@ est_loc1 = findmax(Gray.(black_image1))
 hsv_resized = imresize(RGB.(hsv), (480, 270))
 imshow(hsv_resized)
 image(hsv_resized)
+
+save("./optical_flow_farneback_1.png", current_figure())
 save("./optical_flow_farneback.jpg", hsv)

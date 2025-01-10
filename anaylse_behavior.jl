@@ -248,23 +248,77 @@ centered_X_norm = norm.(eachrow(centered_X))
 using GLM
 using DataFrames
 using MultivariateStats
-
+using StatsBase
+"""
 model = llsq(centered_X, ΔV, bias=false)
 model = llsq(centered_X, ΔV)
+"""
+
+ΔV_ = ΔV[801:end, :]
+centered_X_ = abs.(centered_X[801:end, :])
+
+mean_dist = mean(eachrow((centered_X_))) # mean
+std_dist = std(eachrow((centered_X_))) #standard deviation
+standarize_dist_x = (centered_X_[:,1] .- mean_dist[1]) ./ std_dist[1]
+standarize_dist_y = (centered_X_[:,2] .- mean_dist[2]) ./ std_dist[2]
+stand_dist = hcat(standarize_dist_x, standarize_dist_y)
+
+#the plot shows why we want to standardize
+fig = Figure(resolution=(1800, 800))
+ax1 = fig[1,1] = gl.Axis(fig, xlabel = "x-axis", ylabel = "y-axis", title="ΔV")
+ax2 = fig[1,2] = gl.Axis(fig, xlabel = "x-axis", ylabel = "y-axis", title="|x_burrow - X(t)|")
+scatter!(ax1, ΔV_)
+scatter!(ax2, centered_X_)
+save("figures/reg_data.png", fig)
+fig
+
+theta_matrix = ΔV_ \ stand_dist
+res = [theta_matrix*i for i in eachrow(stand_dist)]
+scatter(getindex.(res, 1))
 
 # Construct the data for regression
-data = DataFrame(ΔV_x= ΔV[:,1], dist_x= abs.(centered_X[:,1]),
-                ΔV_y= ΔV[:,2], dist_y= abs.(centered_X[:,2]),
-                ΔV_norm = norm.(eachrow(ΔV)), dist_norm = centered_X_norm,
-                V = V[2:end,2])
+data = DataFrame(ΔV_x = ΔV_[:,1], dist_x = standarize_dist_x,
+                ΔV_y = ΔV_[:,2], dist_y = standarize_dist_y)
+
+data1 = (ΔV = vcat(ΔV_[:,1], ΔV_[:,2]), dist = vcat(standarize_dist_x, standarize_dist_y),
+        direction = repeat(["x", "y"], inner = size(ΔV_[:,1],1)))
 
 # Fit the regression model: ΔV(t) = θ * (x_burrow - X(t)) + ε
-model1 = lm(@formula(ΔV_x ~ dist_x + dist_y), data)
-model2 = lm(@formula(ΔV_y ~ dist_x + dist_y), data)
+model1 = lm(@formula(ΔV ~  dist *direction), data1)
+model1_1 = lm(@formula(ΔV ~ 0 + dist + dist&direction), data1)
+
+model2_1 = lm(@formula(ΔV_x ~ dist_x), data)
+model2_2 = lm(@formula(ΔV_y ~ dist_y), data)
 
 # Summary of the regression model
 print(model1)
-print(model2)
+print(model1_1)
+print(model2_1) ; print(model2_2)
+
+aic_1 = aic(model1_1)
+bic_1 = bic(model1_1)
+
+aic_2 = aic(model2_1) + aic(model2_2)
+bic_2 = bic(model2_1) + bic(model2_2)
+
+lrt_result = lrtest(model1, model1_1)
+print(lrt_result)
+R2_1 = r2(model1)
+R2_11 = r2(model1_1)
+
+R2_x = r2(model2_1)
+R2_y= r2(model2_2)
+# Compute Total Sum of Squares (TSS) for each direction
+TSS_x = sum((data.ΔV_x .- mean(data.ΔV_x)) .^ 2)
+TSS_y = sum((data.ΔV_y .- mean(data.ΔV_y)) .^ 2)
+# Weighted average R^2 for separate models
+R2_combined = (TSS_x * R2_x + TSS_y * R2_y) / (TSS_x + TSS_y)
+println("Weighted average R^2 from separate models: $R2_combined")
+
+
+res_model1 = residuals(model1)
+scatter(res_model1)
+scatter!([ΔV[:,1];ΔV[:,2]])
 
 #model 1 : ΔV_x = noise
 #model 2 : ΔV_y = θ2* (x_burrow_y - X_y(t))
